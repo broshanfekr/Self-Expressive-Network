@@ -194,7 +194,7 @@ def same_seeds(seed):
 
 if __name__ == "__main__": 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default="MNIST")
+    parser.add_argument('--dataset', type=str, default="CIFAR10")
     parser.add_argument('--num_subspaces', type=int, default=10)
     parser.add_argument('--gamma', type=float, default=200.0)
     parser.add_argument('--lmbd', type=float, default=0.9)
