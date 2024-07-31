@@ -281,97 +281,93 @@ if __name__ == "__main__":
 
     result = open('{}/results.csv'.format(folder), 'w')
     writer = csv.writer(result)
-    writer.writerow(["N", "ACC", "NMI", "ARI"])
+    writer.writerow(["Epoch", "ACC", "NMI", "ARI"])
 
     global_steps = 0
-    for N in [200, 500, 1000, 2000, 5000, 10000, 20000]:
-        sampled_idx = np.random.choice(full_samples.shape[0], N, replace=False)
-        samples, labels = full_samples[sampled_idx], full_labels[sampled_idx]
-        block_size = min(N, 10000)
-      
-        with open('{}/{}_samples_{}.pkl'.format(folder, args.dataset, N), 'wb') as f:
-            pickle.dump(samples, f)
-        with open('{}/{}_labels_{}.pkl'.format(folder, args.dataset, N), 'wb') as f:
-            pickle.dump(labels, f)    
 
-        all_samples, ambient_dim = samples.shape[0], samples.shape[1]
+    
+    samples, labels = full_samples, full_labels
+    N = 10000
+    block_size = min(N, 10000)
+    
+    with open('{}/{}_samples_{}.pkl'.format(folder, args.dataset, N), 'wb') as f:
+        pickle.dump(samples, f)
+    with open('{}/{}_labels_{}.pkl'.format(folder, args.dataset, N), 'wb') as f:
+        pickle.dump(labels, f)    
 
-        data = torch.from_numpy(samples).float()
-        data = utils.p_normalize(data)
+    all_samples, ambient_dim = samples.shape[0], samples.shape[1]
 
-        n_iter_per_epoch = samples.shape[0] // args.batch_size
-        n_step_per_iter = round(all_samples // block_size)
-        n_epochs = args.total_iters // n_iter_per_epoch
+    data = torch.from_numpy(samples).float()
+    data = utils.p_normalize(data)
+
+    n_iter_per_epoch = samples.shape[0] // args.batch_size
+    n_step_per_iter = round(all_samples // block_size)
+    n_epochs = args.total_iters // n_iter_per_epoch
+    
+    senet = SENet(ambient_dim, args.hid_dims, args.out_dims, kaiming_init=True).cuda()
+    optimizer = optim.Adam(senet.parameters(), lr=args.lr)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs, eta_min=args.lr_min)
+
+    n_iters = 0
+    for epoch in range(n_epochs):
+        randidx = torch.randperm(data.shape[0])
         
-        senet = SENet(ambient_dim, args.hid_dims, args.out_dims, kaiming_init=True).cuda()
-        optimizer = optim.Adam(senet.parameters(), lr=args.lr)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs, eta_min=args.lr_min)
+        for i in range(n_iter_per_epoch):
+            senet.train()
 
-        n_iters = 0
-        pbar = tqdm(range(n_epochs), ncols=120)
-
-        for epoch in pbar:
-            pbar.set_description(f"Epoch {epoch}")
-            randidx = torch.randperm(data.shape[0])
+            batch_idx = randidx[i * args.batch_size : (i + 1) * args.batch_size]
+            batch = data[batch_idx].cuda()
+            q_batch = senet.query_embedding(batch)
+            k_batch = senet.key_embedding(batch)
             
-            for i in range(n_iter_per_epoch):
-                senet.train()
+            rec_batch = torch.zeros_like(batch).cuda()
+            reg = torch.zeros([1]).cuda()
+            for j in range(n_step_per_iter):
+                block = data[j * block_size: (j + 1) * block_size].cuda()
+                k_block = senet.key_embedding(block)
+                c = senet.get_coeff(q_batch, k_block)
+                rec_batch = rec_batch + c.mm(block)
+                reg = reg + regularizer(c, args.lmbd)
+            
+            diag_c = senet.thres((q_batch * k_batch).sum(dim=1, keepdim=True)) * senet.shrink
+            rec_batch = rec_batch - diag_c * batch
+            reg = reg - regularizer(diag_c, args.lmbd)
+            
+            rec_loss = torch.sum(torch.pow(batch - rec_batch, 2))
+            loss = (0.5 * args.gamma * rec_loss + reg) / args.batch_size
 
-                batch_idx = randidx[i * args.batch_size : (i + 1) * args.batch_size]
-                batch = data[batch_idx].cuda()
-                q_batch = senet.query_embedding(batch)
-                k_batch = senet.key_embedding(batch)
+            optimizer.zero_grad()
+            loss.backward()
+            nn.utils.clip_grad_norm_(senet.parameters(), 0.001)
+            optimizer.step()
+
+            global_steps += 1
+            n_iters += 1
+
+            if n_iters % args.save_iters == 0:
+                with open('{}/SENet_{}_N{:d}_iter{:d}.pth.tar'.format(folder, args.dataset, N, n_iters), 'wb') as f:
+                    torch.save(senet.state_dict(), f)
+                print("Model Saved.")
+
+            # if n_iters % args.eval_iters == 0:
+            #     print("Evaluating on sampled data...")
+            #     acc, nmi, ari = evaluate(senet, data=data, labels=labels, num_subspaces=args.num_subspaces, affinity=args.affinity,
+            #                             spectral_dim=args.spectral_dim, non_zeros=args.non_zeros, n_neighbors=args.n_neighbors,
+            #                             batch_size=block_size, chunk_size=block_size,
+            #                             knn_mode='symmetric')
+            #     print("Epoch-{}, ACC-{:.6f}, NMI-{:.6f}, ARI-{:.6f}".format(epoch, acc, nmi, ari))
                 
-                rec_batch = torch.zeros_like(batch).cuda()
-                reg = torch.zeros([1]).cuda()
-                for j in range(n_step_per_iter):
-                    block = data[j * block_size: (j + 1) * block_size].cuda()
-                    k_block = senet.key_embedding(block)
-                    c = senet.get_coeff(q_batch, k_block)
-                    rec_batch = rec_batch + c.mm(block)
-                    reg = reg + regularizer(c, args.lmbd)
-                
-                diag_c = senet.thres((q_batch * k_batch).sum(dim=1, keepdim=True)) * senet.shrink
-                rec_batch = rec_batch - diag_c * batch
-                reg = reg - regularizer(diag_c, args.lmbd)
-                
-                rec_loss = torch.sum(torch.pow(batch - rec_batch, 2))
-                loss = (0.5 * args.gamma * rec_loss + reg) / args.batch_size
+        scheduler.step()
 
-                optimizer.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_norm_(senet.parameters(), 0.001)
-                optimizer.step()
 
-                global_steps += 1
-                n_iters += 1
-
-                if n_iters % args.save_iters == 0:
-                    with open('{}/SENet_{}_N{:d}_iter{:d}.pth.tar'.format(folder, args.dataset, N, n_iters), 'wb') as f:
-                        torch.save(senet.state_dict(), f)
-                    print("Model Saved.")
-
-                if n_iters % args.eval_iters == 0:
-                    print("Evaluating on sampled data...")
-                    acc, nmi, ari = evaluate(senet, data=data, labels=labels, num_subspaces=args.num_subspaces, affinity=args.affinity,
-                                            spectral_dim=args.spectral_dim, non_zeros=args.non_zeros, n_neighbors=args.n_neighbors,
-                                            batch_size=block_size, chunk_size=block_size,
-                                            knn_mode='symmetric')
-                    print("ACC-{:.6f}, NMI-{:.6f}, ARI-{:.6f}".format(acc, nmi, ari))
-                    
-            pbar.set_postfix(loss="{:3.4f}".format(loss.item()),
-                             rec_loss="{:3.4f}".format(rec_loss.item() / args.batch_size),
-                             reg="{:3.4f}".format(reg.item() / args.batch_size))
-            scheduler.step()
-
-        print("Evaluating on {}-full...".format(args.dataset))
+        # print("Evaluating on {}-full...".format(args.dataset))
         full_data = torch.from_numpy(full_samples).float()
         full_data = utils.p_normalize(full_data)
         acc, nmi, ari = evaluate(senet, data=full_data, labels=full_labels, num_subspaces=args.num_subspaces, affinity=args.affinity,
                                 spectral_dim=args.spectral_dim, non_zeros=args.non_zeros, n_neighbors=args.n_neighbors, batch_size=args.chunk_size,
                                 chunk_size=args.chunk_size, knn_mode='symmetric')
-        print("N-{:d}: ACC-{:.6f}, NMI-{:.6f}, ARI-{:.6f}".format(N, acc, nmi, ari))
-        writer.writerow([N, acc, nmi, ari])
+        print("Epoch-{:d}, ACC-{:.6f}, NMI-{:.6f}, ARI-{:.6f}".format(epoch, acc, nmi, ari))
+        writer.writerow([epoch, acc, nmi, ari])
         result.flush()
 
         with open('{}/SENet_{}_N{:d}.pth.tar'.format(folder, args.dataset, N), 'wb') as f:
