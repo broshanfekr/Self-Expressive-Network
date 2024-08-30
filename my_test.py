@@ -262,14 +262,17 @@ if __name__ == "__main__":
             test_labels = pickle.load(f)
         full_samples = np.concatenate([train_samples, test_samples], axis=0)
         full_labels = np.concatenate([train_labels, test_labels], axis=0)
+
     elif args.dataset in ["CIFAR10"]:
-        with open('datasets/CIFAR10-MCR2/cifar10-features.npy', 'rb') as f:
+        with open('datasets/my_embeddings/cifar10/cifar10-features-test.npy', 'rb') as f:
             full_samples = np.load(f)
-        with open('datasets/CIFAR10-MCR2/cifar10-labels.npy', 'rb') as f:
+        with open('datasets/my_embeddings/cifar10/cifar10-labels-test.npy', 'rb') as f:
             full_labels = np.load(f)
-            
-        full_samples = full_samples[-10000:]
-        full_labels = full_labels[-10000:]
+        # with open('datasets/CIFAR10-MCR2/cifar10-features.npy', 'rb') as f:
+        #     full_samples = np.load(f)
+        # with open('datasets/CIFAR10-MCR2/cifar10-labels.npy', 'rb') as f:
+        #     full_labels = np.load(f)
+
     else:
         raise Exception("Only MNIST, FashionMNIST and EMNIST are currently supported.")
     
