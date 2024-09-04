@@ -194,7 +194,7 @@ def same_seeds(seed):
 
 if __name__ == "__main__": 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default="CIFAR10")
+    parser.add_argument('--dataset', type=str, default="FashionMNIST")
     parser.add_argument('--num_subspaces', type=int, default=10)
     parser.add_argument('--gamma', type=float, default=200.0)
     parser.add_argument('--lmbd', type=float, default=0.9)
@@ -251,7 +251,7 @@ if __name__ == "__main__":
     same_seeds(args.seed)
     tic = time.time()
 
-    if args.dataset in ["MNIST", "FashionMNIST", "EMNIST"]:
+    if args.dataset in ["MNIST", "FashionMNIST", "EMNIST"] and False:
         with open('datasets/{}/{}_scattering_train_data.pkl'.format(args.dataset, args.dataset), 'rb') as f:
             train_samples = pickle.load(f)
         with open('datasets/{}/{}_scattering_train_label.pkl'.format(args.dataset, args.dataset), 'rb') as f:
@@ -263,19 +263,19 @@ if __name__ == "__main__":
         full_samples = np.concatenate([train_samples, test_samples], axis=0)
         full_labels = np.concatenate([train_labels, test_labels], axis=0)
 
-    elif args.dataset in ["CIFAR10"]:
-        with open('datasets/my_embeddings/cifar10/cifar10-features-train.npy', 'rb') as f:
-            train_samples = np.load(f)
-        with open('datasets/my_embeddings/cifar10/cifar10-labels-train.npy', 'rb') as f:
-            train_labels = np.load(f)
+    else:
+        with open('outputs/fashion_mnist/selfsup_ResNet10MNIST+128_fashionmnist_epo150_bs1000_aug50+fashionmnist_lr0.1_mom0.9_wd0.0005_gam120.0_gam20.05_eps0.5/fashionmnist_features.npy', 'rb') as f:
+            full_samples = np.load(f)
+        with open('outputs/fashion_mnist/selfsup_ResNet10MNIST+128_fashionmnist_epo150_bs1000_aug50+fashionmnist_lr0.1_mom0.9_wd0.0005_gam120.0_gam20.05_eps0.5/fashionmnist_labels.npy', 'rb') as f:
+            full_labels = np.load(f)
 
-        with open('datasets/my_embeddings/cifar10/cifar10-features-test.npy', 'rb') as f:
-            test_samples = np.load(f)
-        with open('datasets/my_embeddings/cifar10/cifar10-labels-test.npy', 'rb') as f:
-            test_labels = np.load(f)
+        # with open('datasets/my_embeddings/cifar10/cifar10-features-test.npy', 'rb') as f:
+        #     test_samples = np.load(f)
+        # with open('datasets/my_embeddings/cifar10/cifar10-labels-test.npy', 'rb') as f:
+        #     test_labels = np.load(f)
 
-        full_samples = np.concatenate([train_samples, test_samples], axis=0)
-        full_labels = np.concatenate([train_labels, test_labels], axis=0)
+        # full_samples = np.concatenate([train_samples, test_samples], axis=0)
+        # full_labels = np.concatenate([train_labels, test_labels], axis=0)
 
 
 
@@ -292,8 +292,8 @@ if __name__ == "__main__":
         # with open('datasets/CIFAR10-MCR2/cifar10-labels.npy', 'rb') as f:
         #     full_labels = np.load(f)
 
-    else:
-        raise Exception("Only MNIST, FashionMNIST and EMNIST are currently supported.")
+    # else:
+    #     raise Exception("Only MNIST, FashionMNIST and EMNIST are currently supported.")
     
     if args.mean_subtract:
         print("Mean Subtraction")
@@ -312,10 +312,10 @@ if __name__ == "__main__":
     N = 10000
     block_size = min(N, 10000)
     
-    with open('{}/{}_samples_{}.pkl'.format(folder, args.dataset, N), 'wb') as f:
-        pickle.dump(samples, f)
-    with open('{}/{}_labels_{}.pkl'.format(folder, args.dataset, N), 'wb') as f:
-        pickle.dump(labels, f)    
+    # with open('{}/{}_samples_{}.pkl'.format(folder, args.dataset, N), 'wb') as f:
+    #     pickle.dump(samples, f)
+    # with open('{}/{}_labels_{}.pkl'.format(folder, args.dataset, N), 'wb') as f:
+    #     pickle.dump(labels, f)    
 
     all_samples, ambient_dim = samples.shape[0], samples.shape[1]
 
@@ -331,6 +331,10 @@ if __name__ == "__main__":
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs, eta_min=args.lr_min)
 
     n_iters = 0
+    best_nmi = 0
+    best_acc = 0
+    best_ari = 0
+    best_epoch = 0
     for epoch in range(n_epochs):
         randidx = torch.randperm(data.shape[0])
         
@@ -386,14 +390,26 @@ if __name__ == "__main__":
         full_data = torch.from_numpy(full_samples).float()
         full_data = utils.p_normalize(full_data)
         acc, nmi, ari = evaluate(senet, data=full_data, labels=full_labels, num_subspaces=args.num_subspaces, affinity=args.affinity,
-                                spectral_dim=args.spectral_dim, non_zeros=args.non_zeros, n_neighbors=args.n_neighbors, batch_size=args.chunk_size,
-                                chunk_size=args.chunk_size, knn_mode='symmetric')
+                                 spectral_dim=args.spectral_dim, non_zeros=args.non_zeros, n_neighbors=args.n_neighbors, batch_size=args.chunk_size,
+                                 chunk_size=args.chunk_size, knn_mode='symmetric')
         print("Epoch-{:d}, ACC-{:.6f}, NMI-{:.6f}, ARI-{:.6f}".format(epoch, acc, nmi, ari))
         writer.writerow([epoch, acc, nmi, ari])
         result.flush()
+
+        if nmi > best_nmi:
+            best_nmi = nmi
+            best_acc = acc
+            best_ari = ari
+            best_epoch = epoch
 
         with open('{}/SENet_{}_N{:d}.pth.tar'.format(folder, args.dataset, N), 'wb') as f:
             torch.save(senet.state_dict(), f)
 
         torch.cuda.empty_cache()
+
+    print("\n\n")
+    print("Epoch-{:d}, ACC-{:.6f}, NMI-{:.6f}, ARI-{:.6f}".format(best_epoch, best_acc, best_nmi, best_ari))
+    writer.writerow([best_epoch, best_acc, best_nmi, best_ari])
+    result.flush()
+    
     result.close()
