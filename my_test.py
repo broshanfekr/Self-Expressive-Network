@@ -194,7 +194,7 @@ def same_seeds(seed):
 
 if __name__ == "__main__": 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default="FashionMNIST")
+    parser.add_argument('--dataset', type=str, default="cifar100")
     parser.add_argument('--num_subspaces', type=int, default=10)
     parser.add_argument('--gamma', type=float, default=200.0)
     parser.add_argument('--lmbd', type=float, default=0.9)
@@ -216,30 +216,48 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args()
 
-    if args.dataset == 'MNIST' or args.dataset == 'FashionMNIST':
-        args.__setattr__('gamma', 200.0)
-        args.__setattr__('spectral_dim', 15)
-        args.__setattr__('mean_subtract', False)
-        args.__setattr__('lr_min', 0.0)
-    elif args.dataset == 'EMNIST':
-        args.__setattr__('gamma', 150.0)
-        args.__setattr__('num_subspaces', 26)
-        args.__setattr__('spectral_dim', 26)
-        args.__setattr__('mean_subtract', True)
-        args.__setattr__('chunk_size', 10611)
-        args.__setattr__('lr_min', 1e-3)
-    elif args.dataset == 'CIFAR10':
-        args.__setattr__('gamma', 200)
-        args.__setattr__('num_subspaces', 10)
-        args.__setattr__('chunk_size', 10000)
-        args.__setattr__('total_iters', 50000)
-        args.__setattr__('eval_iters', 100000)
-        args.__setattr__('lr_min', 0.0)
-        args.__setattr__('spectral_dim', 10)
-        args.__setattr__('mean_subtract', False)
-        args.__setattr__('affinity', 'symmetric')
-    else:
-        raise Exception("Only MNIST, FashionMNIST, EMNIST and CIFAR10 are currently supported.")
+
+    # if args.dataset == 'MNIST' or args.dataset == 'FashionMNIST':
+    #     args.__setattr__('gamma', 200.0)
+    #     args.__setattr__('spectral_dim', 15)
+    #     args.__setattr__('mean_subtract', False)
+    #     args.__setattr__('lr_min', 0.0)
+    # elif args.dataset == 'EMNIST':
+    #     args.__setattr__('gamma', 150.0)
+    #     args.__setattr__('num_subspaces', 26)
+    #     args.__setattr__('spectral_dim', 26)
+    #     args.__setattr__('mean_subtract', True)
+    #     args.__setattr__('chunk_size', 10611)
+    #     args.__setattr__('lr_min', 1e-3)
+    # elif args.dataset == 'CIFAR10':
+    #     args.__setattr__('gamma', 200)
+    #     args.__setattr__('num_subspaces', 10)
+    #     args.__setattr__('chunk_size', 10000)
+    #     args.__setattr__('total_iters', 50000)
+    #     args.__setattr__('eval_iters', 100000)
+    #     args.__setattr__('lr_min', 0.0)
+    #     args.__setattr__('spectral_dim', 10)
+    #     args.__setattr__('mean_subtract', False)
+    #     args.__setattr__('affinity', 'symmetric')
+    # else:
+    #     raise Exception("Only MNIST, FashionMNIST, EMNIST and CIFAR10 are currently supported.")
+
+
+
+    args.__setattr__('gamma', 200)
+    args.__setattr__('num_subspaces', 10)
+    args.__setattr__('chunk_size', 10000)
+    args.__setattr__('total_iters', 50000)
+    args.__setattr__('eval_iters', 100000)
+    args.__setattr__('lr_min', 0.0)
+    args.__setattr__('spectral_dim', 10)
+    args.__setattr__('mean_subtract', False)
+    args.__setattr__('affinity', 'symmetric')
+
+
+
+
+
 
     fit_msg = "Experiments on {}, numpy_seed=0, total_iters=100000, lambda=0.9, gamma=200.0".format(args.dataset, args.seed)
     print(fit_msg)
@@ -264,9 +282,9 @@ if __name__ == "__main__":
         full_labels = np.concatenate([train_labels, test_labels], axis=0)
 
     else:
-        with open('outputs/fashion_mnist/selfsup_ResNet10MNIST+128_fashionmnist_epo150_bs1000_aug50+fashionmnist_lr0.1_mom0.9_wd0.0005_gam120.0_gam20.05_eps0.5/fashionmnist_features.npy', 'rb') as f:
+        with open('outputs/cifar100_test/selfsup_resnet18ctrl+128_cifar100_epo150_bs1000_aug50+cifar_lr0.1_mom0.9_wd0.0005_gam120.0_gam20.05_eps0.5/cifar100_features.npy', 'rb') as f:
             full_samples = np.load(f)
-        with open('outputs/fashion_mnist/selfsup_ResNet10MNIST+128_fashionmnist_epo150_bs1000_aug50+fashionmnist_lr0.1_mom0.9_wd0.0005_gam120.0_gam20.05_eps0.5/fashionmnist_labels.npy', 'rb') as f:
+        with open('outputs/cifar100_test/selfsup_resnet18ctrl+128_cifar100_epo150_bs1000_aug50+cifar_lr0.1_mom0.9_wd0.0005_gam120.0_gam20.05_eps0.5/cifar100_labels.npy', 'rb') as f:
             full_labels = np.load(f)
 
         # with open('datasets/my_embeddings/cifar10/cifar10-features-test.npy', 'rb') as f:
