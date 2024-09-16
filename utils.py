@@ -209,4 +209,4 @@ def spectral_clustering(affinity_matrix_, n_clusters, k, seed=1, n_init=20):
     embedding = normalize(vec)
     _, labels_, _ = cluster.k_means(embedding, n_clusters, 
                                          random_state=seed, n_init=n_init)
-    return labels_
+    return labels_, embedding

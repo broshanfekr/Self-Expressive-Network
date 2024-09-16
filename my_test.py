@@ -17,8 +17,23 @@ import argparse
 import random
 from tqdm import tqdm
 import os
+import pickle
 import csv
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
+
+def load_var(load_path):
+    file = open(load_path, 'rb')
+    variable = pickle.load(file)
+    file.close()
+    return variable
+
+
+def save_var(save_path, variable):
+    file = open(save_path, 'wb')
+    pickle.dump(variable, file)
+    print("variable saved.")
+    file.close()
 
 
 class MLP(nn.Module):
@@ -174,11 +189,11 @@ def evaluate(senet, data, labels, num_subspaces, spectral_dim, non_zeros=1000, n
         Aff = get_knn_Aff(C_sparse_normalized, k=n_neighbors, mode=knn_mode)
     else:
         raise Exception("affinity should be 'symmetric' or 'nearest_neighbor'")
-    preds = utils.spectral_clustering(Aff, num_subspaces, spectral_dim)
+    preds, embeddings = utils.spectral_clustering(Aff, num_subspaces, spectral_dim)
     acc = clustering_accuracy(labels, preds)
     nmi = normalized_mutual_info_score(labels, preds, average_method='geometric')
     ari = adjusted_rand_score(labels, preds)
-    return acc, nmi, ari
+    return acc, nmi, ari, embeddings
 
 
 def same_seeds(seed):
@@ -194,7 +209,7 @@ def same_seeds(seed):
 
 if __name__ == "__main__": 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default="cifar100")
+    parser.add_argument('--dataset', type=str, default="cifar10")
     parser.add_argument('--num_subspaces', type=int, default=10)
     parser.add_argument('--gamma', type=float, default=200.0)
     parser.add_argument('--lmbd', type=float, default=0.9)
@@ -282,10 +297,10 @@ if __name__ == "__main__":
         full_labels = np.concatenate([train_labels, test_labels], axis=0)
 
     else:
-        with open('outputs/cifar100_test/selfsup_resnet18ctrl+128_cifar100_epo150_bs1000_aug50+cifar_lr0.1_mom0.9_wd0.0005_gam120.0_gam20.05_eps0.5/cifar100_features.npy', 'rb') as f:
-            full_samples = np.load(f)
-        with open('outputs/cifar100_test/selfsup_resnet18ctrl+128_cifar100_epo150_bs1000_aug50+cifar_lr0.1_mom0.9_wd0.0005_gam120.0_gam20.05_eps0.5/cifar100_labels.npy', 'rb') as f:
-            full_labels = np.load(f)
+        # with open('outputs/cifar100_test/selfsup_resnet18ctrl+128_cifar100_epo150_bs1000_aug50+cifar_lr0.1_mom0.9_wd0.0005_gam120.0_gam20.05_eps0.5/cifar100_features.npy', 'rb') as f:
+        #     full_samples = np.load(f)
+        # with open('outputs/cifar100_test/selfsup_resnet18ctrl+128_cifar100_epo150_bs1000_aug50+cifar_lr0.1_mom0.9_wd0.0005_gam120.0_gam20.05_eps0.5/cifar100_labels.npy', 'rb') as f:
+        #     full_labels = np.load(f)
 
         # with open('datasets/my_embeddings/cifar10/cifar10-features-test.npy', 'rb') as f:
         #     test_samples = np.load(f)
@@ -297,18 +312,11 @@ if __name__ == "__main__":
 
 
 
-
-        # with open('datasets/my_embeddings/cifar10/cifar10-features-test.npy', 'rb') as f:
-        #     full_samples = np.load(f)
-        # with open('datasets/my_embeddings/cifar10/cifar10-labels-test.npy', 'rb') as f:
-        #     full_labels = np.load(f)
-
-
-
-        # with open('datasets/CIFAR10-MCR2/cifar10-features.npy', 'rb') as f:
-        #     full_samples = np.load(f)
-        # with open('datasets/CIFAR10-MCR2/cifar10-labels.npy', 'rb') as f:
-        #     full_labels = np.load(f)
+        file_path = "../data/data/cifar10/test/cifar10_test.pckl"
+        
+        imgs, full_labels, full_samples = load_var(file_path)
+        cluster_num = len(np.unique(full_labels))
+        full_labels = np.asarray(full_labels)
 
     # else:
     #     raise Exception("Only MNIST, FashionMNIST and EMNIST are currently supported.")
@@ -407,9 +415,12 @@ if __name__ == "__main__":
         # print("Evaluating on {}-full...".format(args.dataset))
         full_data = torch.from_numpy(full_samples).float()
         full_data = utils.p_normalize(full_data)
-        acc, nmi, ari = evaluate(senet, data=full_data, labels=full_labels, num_subspaces=args.num_subspaces, affinity=args.affinity,
-                                 spectral_dim=args.spectral_dim, non_zeros=args.non_zeros, n_neighbors=args.n_neighbors, batch_size=args.chunk_size,
-                                 chunk_size=args.chunk_size, knn_mode='symmetric')
+        acc, nmi, ari, embeddings = evaluate(senet, data=full_data, labels=full_labels, 
+                                             num_subspaces=args.num_subspaces, affinity=args.affinity,
+                                             spectral_dim=args.spectral_dim, non_zeros=args.non_zeros, 
+                                             n_neighbors=args.n_neighbors, batch_size=args.chunk_size,
+                                             chunk_size=args.chunk_size, knn_mode='symmetric')
+        
         print("Epoch-{:d}, ACC-{:.6f}, NMI-{:.6f}, ARI-{:.6f}".format(epoch, acc, nmi, ari))
         writer.writerow([epoch, acc, nmi, ari])
         result.flush()
@@ -420,8 +431,10 @@ if __name__ == "__main__":
             best_ari = ari
             best_epoch = epoch
 
-        with open('{}/SENet_{}_N{:d}.pth.tar'.format(folder, args.dataset, N), 'wb') as f:
-            torch.save(senet.state_dict(), f)
+            with open('{}/SENet_{}_N{:d}.pth.tar'.format(folder, args.dataset, N), 'wb') as f:
+                torch.save(senet.state_dict(), f)
+                
+            save_var("{}/embeddings.pckl".format(folder), [embeddings, full_data, full_labels])
 
         torch.cuda.empty_cache()
 
